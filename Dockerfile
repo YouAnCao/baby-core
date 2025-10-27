@@ -10,6 +10,9 @@ RUN npm run build
 # Go backend build
 FROM golang:1.21-alpine AS backend-builder
 
+# Install build dependencies for CGO (required by SQLite driver)
+RUN apk add --no-cache gcc musl-dev sqlite-dev
+
 WORKDIR /app
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
