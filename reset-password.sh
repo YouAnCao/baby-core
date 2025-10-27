@@ -67,40 +67,22 @@ if [ "$USER_EXISTS" -eq 0 ]; then
     exit 1
 fi
 
-# 生成新密码哈希
-echo -e "\n${BLUE}生成新密码哈希...${NC}"
+# 生成新的 salt 和密码哈希
+echo -e "\n${BLUE}生成新的 salt 和密码哈希...${NC}"
 
-HASH=$(docker exec baby-core /bin/sh -c "cat > /tmp/hashgen.go << 'GOEOF'
-package main
-import (
-    \"fmt\"
-    \"os\"
-    \"golang.org/x/crypto/bcrypt\"
-)
-func main() {
-    if len(os.Args) < 2 {
-        os.Exit(1)
-    }
-    hash, err := bcrypt.GenerateFromPassword([]byte(os.Args[1]), bcrypt.DefaultCost)
-    if err != nil {
-        os.Exit(1)
-    }
-    fmt.Print(string(hash))
-}
-GOEOF
-cd /tmp && go run hashgen.go '$NEW_PASSWORD' && rm -f hashgen.go" 2>&1)
+# 生成随机 salt
+NEW_SALT=$(openssl rand -hex 16)
 
-if [ $? -ne 0 ]; then
-    echo -e "${RED}错误: 生成密码哈希失败${NC}"
-    exit 1
-fi
+# 使用 MD5 生成密码哈希
+NEW_HASH=$(echo -n "${NEW_PASSWORD}${NEW_SALT}" | md5sum | awk '{print $1}')
 
-# 更新密码
-SAFE_HASH=$(echo "$HASH" | sed "s/'/''/g")
+# 更新密码和 salt
+SAFE_HASH=$(echo "$NEW_HASH" | sed "s/'/''/g")
+SAFE_SALT=$(echo "$NEW_SALT" | sed "s/'/''/g")
 
 docker exec baby-core sqlite3 /app/data/baby_tracker.db \
     "UPDATE users 
-     SET password_hash='$SAFE_HASH', updated_at=datetime('now')
+     SET password_hash='$SAFE_HASH', salt='$SAFE_SALT', updated_at=datetime('now')
      WHERE username='$SAFE_USERNAME';"
 
 echo -e "${GREEN}✓ 密码重置成功${NC}"

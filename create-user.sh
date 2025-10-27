@@ -57,42 +57,16 @@ fi
 
 echo -e "${GREEN}✓ 容器运行正常${NC}"
 
-# 生成密码哈希
-echo -e "\n${BLUE}生成密码哈希...${NC}"
+# 生成 salt 和密码哈希
+echo -e "\n${BLUE}生成 salt 和密码哈希...${NC}"
 
-# 创建临时 Go 程序来生成 bcrypt 哈希
-HASH=$(docker exec baby-core /bin/sh -c "cat > /tmp/hashgen.go << 'GOEOF'
-package main
+# 生成随机 salt (16字节，32个十六进制字符)
+SALT=$(openssl rand -hex 16)
+echo "Salt: $SALT"
 
-import (
-    \"fmt\"
-    \"os\"
-    \"golang.org/x/crypto/bcrypt\"
-)
-
-func main() {
-    if len(os.Args) < 2 {
-        fmt.Println(\"Usage: hashgen <password>\")
-        os.Exit(1)
-    }
-    
-    password := os.Args[1]
-    hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-    if err != nil {
-        fmt.Printf(\"Error: %v\n\", err)
-        os.Exit(1)
-    }
-    
-    fmt.Print(string(hash))
-}
-GOEOF
-cd /tmp && go run hashgen.go '$PASSWORD' && rm -f hashgen.go" 2>&1)
-
-if [ $? -ne 0 ]; then
-    echo -e "${RED}错误: 生成密码哈希失败${NC}"
-    echo "$HASH"
-    exit 1
-fi
+# 使用 MD5 生成密码哈希
+HASH=$(echo -n "${PASSWORD}${SALT}" | md5sum | awk '{print $1}')
+echo "Hash: $HASH"
 
 echo -e "${GREEN}✓ 密码哈希生成成功${NC}"
 
@@ -102,11 +76,12 @@ echo -e "\n${BLUE}插入用户到数据库...${NC}"
 # 转义单引号
 SAFE_USERNAME=$(echo "$USERNAME" | sed "s/'/''/g")
 SAFE_HASH=$(echo "$HASH" | sed "s/'/''/g")
+SAFE_SALT=$(echo "$SALT" | sed "s/'/''/g")
 
 # 执行 SQL 插入
 RESULT=$(docker exec baby-core sqlite3 /app/data/baby_tracker.db \
-    "INSERT OR REPLACE INTO users (username, password_hash, created_at, updated_at) 
-     VALUES ('$SAFE_USERNAME', '$SAFE_HASH', datetime('now'), datetime('now'));" 2>&1)
+    "INSERT OR REPLACE INTO users (username, password_hash, salt, created_at, updated_at) 
+     VALUES ('$SAFE_USERNAME', '$SAFE_HASH', '$SAFE_SALT', datetime('now'), datetime('now'));" 2>&1)
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}错误: 插入用户失败${NC}"

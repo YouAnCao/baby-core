@@ -87,32 +87,17 @@ else
 fi
 
 # 7. 测试密码哈希
-echo -e "\n${BLUE}7. 测试密码哈希生成${NC}"
-TEST_HASH=$(docker exec baby-core /bin/sh -c "cat > /tmp/test_hash.go << 'GOEOF'
-package main
-import (
-    \"fmt\"
-    \"golang.org/x/crypto/bcrypt\"
-)
-func main() {
-    password := \"feifei080240\"
-    hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-    if err != nil {
-        fmt.Printf(\"Error: %v\n\", err)
-        return
-    }
-    fmt.Printf(\"Hash length: %d\n\", len(hash))
-    fmt.Printf(\"Hash prefix: %s\n\", string(hash[:7]))
-}
-GOEOF
-cd /tmp && go run test_hash.go 2>&1 && rm -f test_hash.go" 2>/dev/null)
+echo -e "\n${BLUE}7. 测试密码哈希生成 (MD5+Salt)${NC}"
+TEST_SALT=$(openssl rand -hex 16)
+TEST_HASH=$(echo -n "feifei080240${TEST_SALT}" | md5sum | awk '{print $1}')
 
-if echo "$TEST_HASH" | grep -q "Hash length"; then
+if [ -n "$TEST_HASH" ] && [ ${#TEST_HASH} -eq 32 ]; then
     echo -e "${GREEN}✓ 密码哈希生成正常${NC}"
-    echo "$TEST_HASH"
+    echo "Salt 长度: ${#TEST_SALT} (应为32)"
+    echo "Hash 长度: ${#TEST_HASH} (应为32)"
+    echo "算法: MD5 + Salt"
 else
     echo -e "${RED}✗ 密码哈希生成失败${NC}"
-    echo "$TEST_HASH"
 fi
 
 # 8. 查看后端日志

@@ -16,18 +16,12 @@ if ! docker ps | grep -q baby-core; then
     exit 1
 fi
 
-# BCrypt 哈希 "admin123" (cost=10)
-# 这个哈希是预先生成的，密码是 "admin123"
-PASSWORD_HASH='$2a$10$N9qo8uLOickgx2ZMRZoMye7I8mWFBjUDVF3pXSEWQJLQ5YP3KMQKS'
-
-if [ "$PASSWORD" != "admin123" ]; then
-    echo "警告: 自定义密码需要在容器内生成哈希"
-    echo "使用 init-user.sh 脚本代替"
-    exit 1
-fi
+# 生成 salt 和 MD5 哈希
+SALT=$(openssl rand -hex 16)
+PASSWORD_HASH=$(echo -n "${PASSWORD}${SALT}" | md5sum | awk '{print $1}')
 
 # 插入默认用户
-docker exec baby-core sqlite3 /app/data/baby_tracker.db "INSERT OR REPLACE INTO users (id, username, password_hash, created_at, updated_at) VALUES (1, '$USERNAME', '$PASSWORD_HASH', datetime('now'), datetime('now'));"
+docker exec baby-core sqlite3 /app/data/baby_tracker.db "INSERT OR REPLACE INTO users (id, username, password_hash, salt, created_at, updated_at) VALUES (1, '$USERNAME', '$PASSWORD_HASH', '$SALT', datetime('now'), datetime('now'));"
 
 echo "✓ 默认用户创建成功！"
 echo ""
