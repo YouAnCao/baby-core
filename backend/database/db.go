@@ -46,6 +46,7 @@ func runMigrations() error {
 		"../sql/001_init.sql",
 		"../sql/002_records.sql",
 		"../sql/003_ai_analysis.sql",
+		"../sql/004_soft_delete.sql",
 	}
 
 	for _, file := range sqlFiles {
@@ -86,6 +87,7 @@ func createTablesDirectly() error {
 		notes TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		deleted_at DATETIME DEFAULT NULL,
 		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 	);
 	
@@ -93,6 +95,8 @@ func createTablesDirectly() error {
 	CREATE INDEX IF NOT EXISTS idx_records_record_time ON records(record_time);
 	CREATE INDEX IF NOT EXISTS idx_records_type ON records(record_type);
 	CREATE INDEX IF NOT EXISTS idx_records_user_time ON records(user_id, record_time DESC);
+	CREATE INDEX IF NOT EXISTS idx_records_deleted_at ON records(deleted_at);
+	CREATE INDEX IF NOT EXISTS idx_records_user_deleted ON records(user_id, deleted_at);
 	
 	CREATE TABLE IF NOT EXISTS ai_analysis (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
