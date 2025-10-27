@@ -21,7 +21,9 @@ COPY backend/ ./
 # Copy built frontend from previous stage
 COPY --from=frontend-builder /app/backend/dist ./dist
 
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o baby-tracker .
+# Build with CGO enabled, using musl-compatible flags for Alpine Linux
+RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" \
+    go build -a -installsuffix cgo -ldflags="-s -w" -o baby-tracker .
 
 # Final runtime stage
 FROM alpine:latest
