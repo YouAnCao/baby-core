@@ -35,7 +35,8 @@ WORKDIR /app
 # Copy binary and static files
 COPY --from=backend-builder /app/baby-tracker .
 COPY --from=backend-builder /app/dist ./dist
-COPY backend/sql ./sql
+# Copy SQL files from build context
+COPY sql ./sql
 
 # Create data directory for database
 RUN mkdir -p /app/data
