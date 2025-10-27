@@ -1,0 +1,34 @@
+# Backend
+backend/baby-tracker
+backend/baby_tracker.db
+backend/dist/
+
+# Frontend
+web/node_modules/
+web/dist/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+

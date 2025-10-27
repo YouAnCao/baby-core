@@ -1,0 +1,55 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+*.md
+!backend/README.md
+
+# Logs
+*.log
+logs/
+nginx/logs/
+
+# Data
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Node modules
+node_modules/
+npm-debug.log*
+
+# Build artifacts
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Scripts (not needed in container)
+scripts/dev.sh
+scripts/build.sh
+scripts/test*.sh
+deploy.sh
+
