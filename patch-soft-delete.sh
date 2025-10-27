@@ -1,7 +1,12 @@
 #!/bin/bash
 
-# Baby Core 软删除功能补丁脚本
-# 在运行 deploy.sh 之前执行此脚本
+# Baby Core v1.0 → v1.1 软删除功能补丁脚本
+# 用于已部署的生产环境升级
+#
+# 使用步骤:
+#   1. git pull origin main  (获取最新代码)
+#   2. ./patch-soft-delete.sh  (迁移数据库)
+#   3. ./deploy.sh  (重新构建和部署)
 
 set -e
 
@@ -13,98 +18,112 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}=========================================="
-echo -e "Baby Core 软删除功能补丁 v1.1"
+echo -e "Baby Core v1.0 → v1.1 升级补丁"
+echo -e "软删除功能数据库迁移"
 echo -e "==========================================${NC}\n"
 
-# ============================================
-# 1. 数据库迁移（如果数据库已存在）
-# ============================================
-echo -e "${YELLOW}[1/2] 检查并迁移现有数据库...${NC}"
+# 检查Docker是否安装
+if ! command -v docker-compose &> /dev/null; then
+    echo -e "${RED}错误: docker-compose 未安装${NC}"
+    exit 1
+fi
 
-DB_PATH="./data/baby_tracker.db"
+# 检查迁移脚本是否存在
+if [ ! -f "sql/004_soft_delete.sql" ]; then
+    echo -e "${RED}错误: 迁移脚本 sql/004_soft_delete.sql 不存在${NC}"
+    echo "请确保已经运行 git pull 获取最新代码"
+    exit 1
+fi
 
-if [ -f "$DB_PATH" ]; then
-    echo "发现现有数据库: $DB_PATH"
+echo -e "${YELLOW}[步骤 1/2] 迁移现有数据库...${NC}\n"
+
+# 检查容器是否在运行
+if docker-compose ps | grep -q "baby-core.*Up"; then
+    echo "✓ 检测到正在运行的 baby-core 容器"
+    echo ""
     
-    # 检查是否已经有deleted_at字段
-    HAS_DELETED_AT=$(sqlite3 "$DB_PATH" "PRAGMA table_info(records);" 2>/dev/null | grep -c "deleted_at" || true)
+    # 在运行中的容器内迁移
+    echo "检查数据库..."
     
-    if [ "$HAS_DELETED_AT" -eq 0 ]; then
-        echo "应用软删除迁移脚本..."
-        sqlite3 "$DB_PATH" < sql/004_soft_delete.sql
-        echo -e "${GREEN}✓ 数据库迁移完成 - 已添加 deleted_at 字段${NC}"
+    # 检查数据库是否存在
+    DB_EXISTS=$(docker-compose exec -T baby-core sh -c "[ -f /app/data/baby_tracker.db ] && echo 'yes' || echo 'no'" 2>/dev/null)
+    
+    if [ "$DB_EXISTS" = "yes" ]; then
+        echo "✓ 数据库文件存在"
         
-        # 验证
-        sqlite3 "$DB_PATH" "PRAGMA table_info(records);" | grep "deleted_at" && \
-        echo -e "${GREEN}✓ 验证通过${NC}"
+        # 检查是否已有deleted_at字段
+        echo "检查数据库结构..."
+        HAS_DELETED_AT=$(docker-compose exec -T baby-core sh -c "sqlite3 /app/data/baby_tracker.db 'PRAGMA table_info(records);'" 2>/dev/null | grep -c "deleted_at" || echo "0")
+        
+        if [ "$HAS_DELETED_AT" = "0" ]; then
+            echo ""
+            echo -e "${YELLOW}准备应用迁移脚本...${NC}"
+            
+            # 备份数据库（可选但推荐）
+            echo "创建数据库备份..."
+            BACKUP_NAME="baby_tracker_backup_$(date +%Y%m%d_%H%M%S).db"
+            docker-compose exec -T baby-core sh -c "cp /app/data/baby_tracker.db /app/data/$BACKUP_NAME"
+            echo -e "${GREEN}✓ 备份已创建: data/$BACKUP_NAME${NC}"
+            echo ""
+            
+            # 执行迁移
+            echo "应用软删除迁移..."
+            docker-compose exec -T baby-core sh -c "sqlite3 /app/data/baby_tracker.db < /app/sql/004_soft_delete.sql"
+            
+            # 验证
+            VERIFY=$(docker-compose exec -T baby-core sh -c "sqlite3 /app/data/baby_tracker.db 'PRAGMA table_info(records);'" 2>/dev/null | grep -c "deleted_at" || echo "0")
+            
+            if [ "$VERIFY" -gt 0 ]; then
+                echo -e "${GREEN}✓ 数据库迁移成功！${NC}"
+                echo -e "${GREEN}✓ deleted_at 字段已添加${NC}"
+            else
+                echo -e "${RED}✗ 迁移验证失败${NC}"
+                echo "尝试从备份恢复..."
+                docker-compose exec -T baby-core sh -c "cp /app/data/$BACKUP_NAME /app/data/baby_tracker.db"
+                exit 1
+            fi
+        else
+            echo -e "${GREEN}✓ 数据库已包含 deleted_at 字段${NC}"
+            echo "数据库已是最新版本，无需迁移"
+        fi
     else
-        echo -e "${GREEN}✓ 数据库已包含 deleted_at 字段，跳过迁移${NC}"
+        echo -e "${YELLOW}⚠ 容器内数据库文件不存在${NC}"
+        echo "这可能是首次部署，数据库将在重新部署后自动创建"
     fi
-else
-    echo -e "${YELLOW}⚠ 数据库文件不存在${NC}"
-    echo "这是正常的，如果是首次部署，数据库会在首次启动时自动创建"
-    echo "迁移脚本已准备好，会在容器启动时自动应用"
-fi
-
-echo ""
-
-# ============================================
-# 2. 创建初始化脚本（供Docker容器使用）
-# ============================================
-echo -e "${YELLOW}[2/2] 准备Docker初始化脚本...${NC}"
-
-cat > init-db.sh << 'EOF'
-#!/bin/sh
-# Docker容器启动时的数据库初始化脚本
-
-DB_PATH="/app/data/baby_tracker.db"
-
-# 如果数据库已存在，检查并应用迁移
-if [ -f "$DB_PATH" ]; then
-    echo "检查数据库迁移..."
-    HAS_DELETED_AT=$(sqlite3 "$DB_PATH" "PRAGMA table_info(records);" 2>/dev/null | grep -c "deleted_at" || true)
     
-    if [ "$HAS_DELETED_AT" -eq 0 ]; then
-        echo "应用软删除迁移..."
-        sqlite3 "$DB_PATH" < /app/sql/004_soft_delete.sql
-        echo "✓ 迁移完成"
+else
+    # 容器未运行，尝试直接操作data目录
+    echo -e "${YELLOW}⚠ baby-core 容器未运行${NC}"
+    
+    if [ -f "./data/baby_tracker.db" ]; then
+        echo "发现本地数据库文件: ./data/baby_tracker.db"
+        echo -e "${YELLOW}数据库迁移将在重新部署时自动完成${NC}"
+    else
+        echo "未发现数据库文件，这可能是首次部署"
     fi
 fi
 
-# 启动应用
-exec ./baby-tracker
-EOF
-
-chmod +x init-db.sh
-echo -e "${GREEN}✓ 初始化脚本已创建${NC}"
-
 echo ""
+echo -e "${YELLOW}[步骤 2/2] 准备重新部署...${NC}\n"
 
-# ============================================
-# 完成提示
-# ============================================
 echo -e "${GREEN}=========================================="
-echo -e "补丁应用完成！"
+echo -e "数据库迁移完成！"
 echo -e "==========================================${NC}"
 echo ""
-echo -e "📝 ${YELLOW}已完成的工作:${NC}"
-echo -e "  ✓ 数据库迁移（如果数据库存在）"
-echo -e "  ✓ 准备初始化脚本"
+echo -e "📋 ${YELLOW}下一步操作:${NC}"
+echo -e "   运行部署脚本以应用新代码:"
+echo -e "   ${GREEN}./deploy.sh${NC}"
 echo ""
-echo -e "🚀 ${YELLOW}下一步操作:${NC}"
-echo -e "  运行原有的部署脚本:"
-echo -e "  ${GREEN}./deploy.sh${NC}"
+echo -e "   这将会:"
+echo -e "   1. 停止现有容器"
+echo -e "   2. 重新构建包含软删除功能的镜像"
+echo -e "   3. 启动新容器"
 echo ""
-echo -e "📋 ${YELLOW}新增功能:${NC}"
-echo -e "  • 软删除记录（点击删除后记录变灰）"
-echo -e "  • 恢复已删除记录（点击恢复按钮）"
-echo -e "  • 时区修复（Asia/Shanghai）"
-echo -e "  • 记录按时间顺序排列"
-echo ""
-echo -e "📚 ${YELLOW}详细文档:${NC}"
-echo -e "  • SOFT_DELETE_FEATURE.md - 功能说明"
-echo -e "  • SOFT_DELETE_FIX.md - 设计说明"
+echo -e "✨ ${YELLOW}新功能预览:${NC}"
+echo -e "   • 点击'删除'按钮 → 记录变灰并显示横线"
+echo -e "   • 点击'恢复'按钮 → 恢复已删除的记录"
+echo -e "   • 记录按时间顺序排列"
+echo -e "   • 时区修复（Asia/Shanghai）"
 echo ""
 
 exit 0
-

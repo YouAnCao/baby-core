@@ -32,3 +32,9 @@ Thumbs.db
 .env
 .env.local
 
+# Runtime data
+data/
+nginx/logs/
+init-db.sh
+entrypoint.sh
+
