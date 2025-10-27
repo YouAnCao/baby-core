@@ -47,7 +47,11 @@ const records = ref([])
 const loading = ref(false)
 
 function formatDate(date) {
-  return date.toISOString().split('T')[0]
+  // 使用本地时区格式化日期，避免UTC时区问题
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function changeDate(days) {
