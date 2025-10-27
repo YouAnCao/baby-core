@@ -125,7 +125,7 @@ func (h *RecordsHandler) GetSummary(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// DeleteRecord handles deleting a record
+// DeleteRecord handles soft-deleting a record
 func (h *RecordsHandler) DeleteRecord(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
@@ -146,9 +146,39 @@ func (h *RecordsHandler) DeleteRecord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete record
-	if err := models.DeleteRecord(database.DB, recordID, userID); err != nil {
+	// Soft delete record
+	if err := models.SoftDeleteRecord(database.DB, recordID, userID); err != nil {
 		http.Error(w, "Failed to delete record", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// RestoreRecord handles restoring a soft-deleted record
+func (h *RecordsHandler) RestoreRecord(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Get record ID from query parameter
+	recordIDStr := r.URL.Query().Get("id")
+	if recordIDStr == "" {
+		http.Error(w, "Missing record ID", http.StatusBadRequest)
+		return
+	}
+
+	var recordID int
+	if _, err := fmt.Sscanf(recordIDStr, "%d", &recordID); err != nil {
+		http.Error(w, "Invalid record ID", http.StatusBadRequest)
+		return
+	}
+
+	// Restore record
+	if err := models.RestoreRecord(database.DB, recordID, userID); err != nil {
+		http.Error(w, "Failed to restore record", http.StatusInternalServerError)
 		return
 	}
 

@@ -11,18 +11,43 @@
     </div>
     
     <div v-else class="records">
-      <div v-for="record in records" :key="record.id" class="record-item">
-        <div class="record-header">
-          <span class="record-type" :class="record.record_type">
-            {{ getRecordTypeLabel(record.record_type) }}
-          </span>
-          <span class="record-time">{{ formatTime(record.record_time) }}</span>
+      <div 
+        v-for="record in records" 
+        :key="record.id" 
+        class="record-item"
+        :class="{ 'deleted': record.is_deleted }"
+      >
+        <div class="record-content">
+          <div class="record-header">
+            <span class="record-type" :class="record.record_type">
+              {{ getRecordTypeLabel(record.record_type) }}
+            </span>
+            <span class="record-time">{{ formatTime(record.record_time) }}</span>
+          </div>
+          <div class="record-details">
+            {{ formatDetails(record) }}
+          </div>
+          <div v-if="record.notes" class="record-notes">
+            备注: {{ record.notes }}
+          </div>
         </div>
-        <div class="record-details">
-          {{ formatDetails(record) }}
-        </div>
-        <div v-if="record.notes" class="record-notes">
-          备注: {{ record.notes }}
+        <div class="record-actions">
+          <button 
+            v-if="!record.is_deleted"
+            @click="handleDelete(record.id)"
+            class="action-btn delete-btn"
+            :disabled="actionLoading === record.id"
+          >
+            {{ actionLoading === record.id ? '处理中...' : '删除' }}
+          </button>
+          <button 
+            v-else
+            @click="handleRestore(record.id)"
+            class="action-btn restore-btn"
+            :disabled="actionLoading === record.id"
+          >
+            {{ actionLoading === record.id ? '处理中...' : '恢复' }}
+          </button>
         </div>
       </div>
     </div>
@@ -30,12 +55,34 @@
 </template>
 
 <script setup>
-import { defineProps } from 'vue'
+import { defineProps, defineEmits, ref } from 'vue'
 
 defineProps({
   records: Array,
   loading: Boolean
 })
+
+const emit = defineEmits(['delete', 'restore'])
+
+const actionLoading = ref(null)
+
+async function handleDelete(id) {
+  actionLoading.value = id
+  try {
+    await emit('delete', id)
+  } finally {
+    actionLoading.value = null
+  }
+}
+
+async function handleRestore(id) {
+  actionLoading.value = id
+  try {
+    await emit('restore', id)
+  } finally {
+    actionLoading.value = null
+  }
+}
 
 function getRecordTypeLabel(type) {
   const labels = {
@@ -139,11 +186,54 @@ h2 {
   border: 2px solid #e8dfd5;
   border-radius: 8px;
   padding: 16px;
-  transition: border-color 0.3s;
+  transition: all 0.3s;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
 }
 
 .record-item:hover {
   border-color: #d4c5b9;
+}
+
+/* 已删除记录的样式 */
+.record-item.deleted {
+  background: #f5f5f5;
+  border-color: #d0d0d0;
+  opacity: 0.7;
+}
+
+.record-item.deleted .record-content {
+  position: relative;
+}
+
+.record-item.deleted .record-content::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 1.5px;
+  background: #999;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.record-item.deleted .record-time,
+.record-item.deleted .record-details,
+.record-item.deleted .record-notes {
+  color: #999 !important;
+}
+
+/* 已删除记录的类型标签保持原有颜色，只降低不透明度 */
+.record-item.deleted .record-type {
+  opacity: 0.6;
+}
+
+.record-content {
+  flex: 1;
+  min-width: 0;
 }
 
 .record-header {
@@ -160,6 +250,7 @@ h2 {
   font-size: 14px;
   font-weight: 600;
   color: white;
+  transition: background 0.3s;
 }
 
 .record-type.feeding {
@@ -193,6 +284,48 @@ h2 {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid #e8dfd5;
+}
+
+.record-actions {
+  flex-shrink: 0;
+}
+
+.action-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  white-space: nowrap;
+}
+
+.action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.delete-btn {
+  background: #ff6b6b;
+  color: white;
+}
+
+.delete-btn:hover:not(:disabled) {
+  background: #ff5252;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+}
+
+.restore-btn {
+  background: #51cf66;
+  color: white;
+}
+
+.restore-btn:hover:not(:disabled) {
+  background: #40c057;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(81, 207, 102, 0.3);
 }
 </style>
 

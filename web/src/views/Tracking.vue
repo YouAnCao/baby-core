@@ -20,7 +20,13 @@
 
       <QuickEntry @record-created="handleRecordCreated" :current-date="selectedDate" />
       
-      <RecordList :records="records" :loading="loading" @refresh="loadRecords" />
+      <RecordList 
+        :records="records" 
+        :loading="loading" 
+        @refresh="loadRecords" 
+        @delete="handleDelete"
+        @restore="handleRestore"
+      />
     </div>
   </div>
 </template>
@@ -70,6 +76,26 @@ async function loadRecords() {
 
 function handleRecordCreated() {
   loadRecords()
+}
+
+async function handleDelete(recordId) {
+  try {
+    await recordsAPI.deleteRecord(recordId)
+    await loadRecords()
+  } catch (err) {
+    console.error('Failed to delete record:', err)
+    alert('删除失败，请重试')
+  }
+}
+
+async function handleRestore(recordId) {
+  try {
+    await recordsAPI.restoreRecord(recordId)
+    await loadRecords()
+  } catch (err) {
+    console.error('Failed to restore record:', err)
+    alert('恢复失败，请重试')
+  }
 }
 
 function handleLogout() {

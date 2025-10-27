@@ -56,6 +56,7 @@ func main() {
 		r.Post("/api/records", recordsHandler.CreateRecord)
 		r.Get("/api/records", recordsHandler.GetRecords)
 		r.Delete("/api/records", recordsHandler.DeleteRecord)
+		r.Put("/api/records/restore", recordsHandler.RestoreRecord)
 		r.Get("/api/records/summary", recordsHandler.GetSummary)
 	})
 

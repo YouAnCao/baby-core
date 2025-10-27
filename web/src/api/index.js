@@ -53,6 +53,9 @@ export const recordsAPI = {
   deleteRecord(id) {
     return api.delete('/records', { params: { id } })
   },
+  restoreRecord(id) {
+    return api.put('/records/restore', null, { params: { id } })
+  },
   getSummary() {
     return api.get('/records/summary')
   }

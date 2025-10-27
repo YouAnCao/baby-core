@@ -28,7 +28,13 @@ RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" \
 # Final runtime stage
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates sqlite
+# Install runtime dependencies and timezone data
+RUN apk --no-cache add ca-certificates sqlite tzdata
+
+# Set timezone to Asia/Shanghai
+ENV TZ=Asia/Shanghai
+RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone
 
 WORKDIR /app
 
