@@ -126,7 +126,7 @@
 </template>
 
 <script setup>
-import { ref, defineEmits, defineProps, onUnmounted } from 'vue'
+import { ref, defineEmits, defineProps, onUnmounted, onMounted } from 'vue'
 import { recordsAPI } from '../api'
 
 const props = defineProps({
@@ -134,6 +134,36 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['record-created'])
+
+// 获取当前日期+时间的ISO字符串（使用选择的日期）
+function getCurrentDateTime() {
+  const now = new Date()
+  
+  // 如果没有提供currentDate，使用当前时间
+  if (!props.currentDate) {
+    return now.toISOString()
+  }
+  
+  // 使用选择的日期 + 当前时间
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  const selectedDate = props.currentDate || `${year}-${month}-${day}`
+  
+  // 构建完整的日期时间字符串（本地时间）
+  const hours = String(now.getHours()).padStart(2, '0')
+  const minutes = String(now.getMinutes()).padStart(2, '0')
+  const seconds = String(now.getSeconds()).padStart(2, '0')
+  const milliseconds = String(now.getMilliseconds()).padStart(3, '0')
+  
+  // 获取时区偏移（分钟）
+  const offset = -now.getTimezoneOffset()
+  const offsetHours = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')
+  const offsetMinutes = String(Math.abs(offset) % 60).padStart(2, '0')
+  const offsetSign = offset >= 0 ? '+' : '-'
+  
+  return `${selectedDate}T${hours}:${minutes}:${seconds}.${milliseconds}${offsetSign}${offsetHours}:${offsetMinutes}`
+}
 
 const showFeedingModal = ref(false)
 const showDiaperModal = ref(false)
@@ -150,6 +180,72 @@ const feedingData = ref({
   targetSeconds: 0,
   startTime: null,
   isTimerRunning: false
+})
+
+// LocalStorage keys
+const TIMER_STORAGE_KEY = 'feeding_timer_state'
+
+// 保存计时器状态到localStorage
+function saveTimerState() {
+  if (feedingData.value.isTimerRunning) {
+    localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify({
+      method: feedingData.value.method,
+      startTime: feedingData.value.startTime.toISOString(),
+      targetSeconds: feedingData.value.targetSeconds,
+      notes: feedingData.value.notes
+    }))
+  } else {
+    localStorage.removeItem(TIMER_STORAGE_KEY)
+  }
+}
+
+// 从localStorage恢复计时器状态
+function restoreTimerState() {
+  const saved = localStorage.getItem(TIMER_STORAGE_KEY)
+  if (saved) {
+    try {
+      const state = JSON.parse(saved)
+      const startTime = new Date(state.startTime)
+      const now = new Date()
+      const elapsedSeconds = Math.floor((now - startTime) / 1000)
+      
+      feedingData.value = {
+        method: state.method,
+        duration: 10,
+        amount: 30,
+        notes: state.notes,
+        isTimerMode: true,
+        timerSeconds: elapsedSeconds,
+        targetSeconds: state.targetSeconds,
+        startTime: startTime,
+        isTimerRunning: true
+      }
+      
+      showFeedingModal.value = true
+      
+      // 重新启动计时器
+      timerInterval = setInterval(() => {
+        const now = new Date()
+        feedingData.value.timerSeconds = Math.floor((now - feedingData.value.startTime) / 1000)
+        
+        // 检查是否达到目标时间
+        if (feedingData.value.targetSeconds > 0 && 
+            feedingData.value.timerSeconds === feedingData.value.targetSeconds) {
+          playNotificationSound()
+        }
+        
+        saveTimerState()
+      }, 1000)
+    } catch (e) {
+      console.error('Failed to restore timer state:', e)
+      localStorage.removeItem(TIMER_STORAGE_KEY)
+    }
+  }
+}
+
+// 组件挂载时恢复计时器状态
+onMounted(() => {
+  restoreTimerState()
 })
 
 const diaperData = ref({
@@ -192,14 +288,22 @@ function startTimer() {
   feedingData.value.isTimerRunning = true
   feedingData.value.startTime = new Date()
   
+  // 立即保存状态
+  saveTimerState()
+  
   timerInterval = setInterval(() => {
-    feedingData.value.timerSeconds++
+    // 使用开始时间重新计算，确保准确性
+    const now = new Date()
+    feedingData.value.timerSeconds = Math.floor((now - feedingData.value.startTime) / 1000)
     
     // 检查是否达到目标时间
     if (feedingData.value.targetSeconds > 0 && 
         feedingData.value.timerSeconds === feedingData.value.targetSeconds) {
       playNotificationSound()
     }
+    
+    // 定期保存状态
+    saveTimerState()
   }, 1000)
 }
 
@@ -209,6 +313,9 @@ function stopTimer() {
     timerInterval = null
   }
   feedingData.value.isTimerRunning = false
+  
+  // 清除保存的状态
+  localStorage.removeItem(TIMER_STORAGE_KEY)
 }
 
 function addTargetTime(minutes) {
@@ -308,7 +415,7 @@ async function submitFeeding() {
         duration_minutes: feedingData.value.method !== 'bottle' ? parseInt(feedingData.value.duration) : null,
         amount_ml: feedingData.value.method === 'bottle' ? parseInt(feedingData.value.amount) : null
       }
-      recordTime = new Date().toISOString()
+      recordTime = getCurrentDateTime()
     }
 
     await recordsAPI.createRecord({
@@ -318,6 +425,9 @@ async function submitFeeding() {
       notes: feedingData.value.notes
     })
 
+    // 提交成功后清除localStorage中的计时器状态
+    localStorage.removeItem(TIMER_STORAGE_KEY)
+    
     closeFeedingModal()
     emit('record-created')
   } catch (err) {
@@ -335,9 +445,12 @@ async function submitDiaper() {
       stool_amount: diaperData.value.hasStool ? diaperData.value.stoolAmount : null
     }
 
+    // 使用当前选择的日期（而不是总是今天）
+    const recordTime = getCurrentDateTime()
+
     await recordsAPI.createRecord({
       record_type: 'diaper',
-      record_time: new Date().toISOString(),
+      record_time: recordTime,
       details: JSON.stringify(details),
       notes: diaperData.value.notes
     })
