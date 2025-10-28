@@ -34,7 +34,7 @@ KEEP_DAYS=7
 
 # 日志函数
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE" >&2
 }
 
 # 错误处理
@@ -127,9 +127,9 @@ backup_database() {
     mkdir -p "$BACKUP_DIR"
     
     # 生成备份文件名
-    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    BACKUP_FILE="${BACKUP_DIR}/baby_tracker_${TIMESTAMP}.db"
-    SQL_BACKUP="${BACKUP_DIR}/baby_tracker_${TIMESTAMP}.sql"
+    local TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    local BACKUP_FILE="${BACKUP_DIR}/baby_tracker_${TIMESTAMP}.db"
+    local SQL_BACKUP="${BACKUP_DIR}/baby_tracker_${TIMESTAMP}.sql"
     
     # 复制数据库文件
     log "复制数据库文件..."
@@ -138,8 +138,13 @@ backup_database() {
     # 导出为SQL格式（可选）
     log "导出SQL格式..."
     if command -v sqlite3 &> /dev/null; then
-        sqlite3 "$DB_PATH" .dump > "$SQL_BACKUP"
-        log "SQL导出成功: $SQL_BACKUP"
+        sqlite3 "$DB_PATH" .dump > "$SQL_BACKUP" 2>/dev/null || {
+            log "SQL导出失败，跳过"
+            SQL_BACKUP=""
+        }
+        if [ -n "$SQL_BACKUP" ]; then
+            log "SQL导出成功: $SQL_BACKUP"
+        fi
     else
         log "警告: 未安装sqlite3命令，跳过SQL导出"
         SQL_BACKUP=""
@@ -147,26 +152,31 @@ backup_database() {
     
     # 压缩备份文件
     log "压缩备份文件..."
-    COMPRESSED_FILE="${BACKUP_DIR}/baby_tracker_${TIMESTAMP}.tar.gz"
+    local COMPRESSED_FILE="${BACKUP_DIR}/baby_tracker_${TIMESTAMP}.tar.gz"
     
-    if [ -n "$SQL_BACKUP" ]; then
+    if [ -n "$SQL_BACKUP" ] && [ -f "$SQL_BACKUP" ]; then
         tar -czf "$COMPRESSED_FILE" -C "$BACKUP_DIR" \
             "$(basename $BACKUP_FILE)" \
-            "$(basename $SQL_BACKUP)"
+            "$(basename $SQL_BACKUP)" 2>/dev/null
     else
         tar -czf "$COMPRESSED_FILE" -C "$BACKUP_DIR" \
-            "$(basename $BACKUP_FILE)"
+            "$(basename $BACKUP_FILE)" 2>/dev/null
+    fi
+    
+    if [ ! -f "$COMPRESSED_FILE" ]; then
+        error_exit "压缩文件创建失败"
     fi
     
     log "备份文件创建成功: $COMPRESSED_FILE"
     
     # 获取文件大小
-    FILE_SIZE=$(du -h "$COMPRESSED_FILE" | cut -f1)
-    DB_SIZE=$(du -h "$DB_PATH" | cut -f1)
+    local FILE_SIZE=$(du -h "$COMPRESSED_FILE" | cut -f1)
+    local DB_SIZE=$(du -h "$DB_PATH" | cut -f1)
     
     log "原始数据库大小: $DB_SIZE"
     log "压缩后大小: $FILE_SIZE"
     
+    # 返回压缩文件路径（输出到stdout）
     echo "$COMPRESSED_FILE"
 }
 
